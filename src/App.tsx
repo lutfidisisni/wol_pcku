@@ -151,31 +151,37 @@ export default function App() {
         const updatedLogs = await api.getLogs();
         setLogs(updatedLogs);
 
-        // Transition simulation
-        setTimeout(() => {
-          setDevices((prev) =>
-            prev.map((d) =>
-              d.id === devId
-                ? {
-                    ...d,
-                    status: "online",
-                    lastSeen: "Baru saja",
-                    pingLatencyMs: Math.floor(Math.random() * 18) + 6,
-                  }
-                : d
-            )
-          );
-          setWakingDeviceIds((prev) => {
-            const next = new Set(prev);
-            next.delete(devId);
-            return next;
-          });
-          addToast(
-            "info",
-            `${device.name} Online`,
-            `Host ${device.ip} telah boot dan merespon sinyal ping jaringan.`
-          );
-        }, 4500);
+        // Tunggu 5 detik lalu coba ping sesungguhnya
+        setTimeout(async () => {
+          try {
+            const pingRes = await api.pingDevice(devId);
+            setDevices((prev) =>
+              prev.map((d) =>
+                d.id === devId
+                  ? {
+                      ...d,
+                      status: pingRes.status,
+                      lastSeen: pingRes.status === "online" ? "Baru saja" : d.lastSeen,
+                      pingLatencyMs: pingRes.latencyMs || undefined,
+                    }
+                  : d
+              )
+            );
+            if (pingRes.status === "online") {
+              addToast("info", `${device.name} Online`, `Host ${device.ip} telah boot dan merespon sinyal ping.`);
+            } else {
+              addToast("warning", `${device.name} Belum Online`, `Host ${device.ip} belum merespon setelah dikirimkan Wake-on-LAN.`);
+            }
+          } catch (e) {
+            setDevices((prev) => prev.map((d) => (d.id === devId ? { ...d, status: "offline" } : d)));
+          } finally {
+            setWakingDeviceIds((prev) => {
+              const next = new Set(prev);
+              next.delete(devId);
+              return next;
+            });
+          }
+        }, 5000);
       } else {
         throw new Error(result.message || "Gagal mengirim paket.");
       }
@@ -303,18 +309,17 @@ export default function App() {
       const updatedLogs = await api.getLogs();
       setLogs(updatedLogs);
 
-      setTimeout(() => {
-        setDevices((prev) =>
-          prev.map((d) => ({
-            ...d,
-            status: "online",
-            lastSeen: "Baru saja",
-            pingLatencyMs: Math.floor(Math.random() * 20) + 5,
-          }))
-        );
-        setWakingDeviceIds(new Set());
-        setIsWakingAll(false);
-      }, 5000);
+      setTimeout(async () => {
+        try {
+          const updated = await api.pingAll();
+          setDevices(updated);
+        } catch {
+          // ignore
+        } finally {
+          setWakingDeviceIds(new Set());
+          setIsWakingAll(false);
+        }
+      }, 6000);
     } catch {
       setIsWakingAll(false);
       setWakingDeviceIds(new Set());

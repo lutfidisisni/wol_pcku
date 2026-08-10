@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import path from "path";
 import fs from "fs";
 import dgram from "dgram";
+import ping from "ping";
 
 interface Device {
   id: string;
@@ -427,17 +428,17 @@ async function startServer() {
       activityLogs.unshift(logEntry);
       if (activityLogs.length > 50) activityLogs.pop();
 
-      // If tied to a device, simulate wake-up transition after 5 seconds
-      if (id) {
-        const dev = devices.find((d) => d.id === id);
-        if (dev) {
-          setTimeout(() => {
-            dev.status = "online";
-            dev.lastSeen = "Baru saja";
-            dev.pingLatencyMs = Math.floor(Math.random() * 20) + 8;
-          }, 4500);
-        }
-      }
+      // Remove mock simulated wake-up transition. We let actual ping update it later.
+      // if (id) {
+      //   const dev = devices.find((d) => d.id === id);
+      //   if (dev) {
+      //     setTimeout(() => {
+      //       dev.status = "online";
+      //       dev.lastSeen = "Baru saja";
+      //       dev.pingLatencyMs = Math.floor(Math.random() * 20) + 8;
+      //     }, 4500);
+      //   }
+      // }
 
       res.json({
         success: true,
@@ -496,12 +497,12 @@ async function startServer() {
           message: `Wake-all: Magic packet dikirim ke ${dev.name}`,
         });
 
-        // simulate online transition
-        setTimeout(() => {
-          dev.status = "online";
-          dev.lastSeen = "Baru saja";
-          dev.pingLatencyMs = Math.floor(Math.random() * 25) + 5;
-        }, 5000);
+        // Remove mock simulated wake-all transition.
+        // setTimeout(() => {
+        //   dev.status = "online";
+        //   dev.lastSeen = "Baru saja";
+        //   dev.pingLatencyMs = Math.floor(Math.random() * 25) + 5;
+        // }, 5000);
 
         results.push({ name: dev.name, mac: dev.mac, success: true });
       } catch (err: any) {
@@ -518,15 +519,29 @@ async function startServer() {
 
   // Ping check for all devices
   app.post("/api/devices/ping", async (_req: Request, res: Response) => {
-    // Simulate checking ping status across all devices
-    const updated = devices.map((d) => {
-      // Keep online devices mostly online, allow slight latency variation
-      if (d.status === "online") {
-        d.pingLatencyMs = Math.floor(Math.random() * 18) + 4;
-        d.lastSeen = "Baru saja";
+    // Perform actual ping status across all devices
+    const promises = devices.map(async (d) => {
+      try {
+        const pingRes = await ping.promise.probe(d.ip, { timeout: 2 });
+        if (pingRes.alive) {
+          d.status = "online";
+          d.pingLatencyMs = Math.round(pingRes.time as number) || 1;
+          d.lastSeen = "Baru saja";
+        } else {
+          // If it was 'waking', we can leave it as waking until it actually comes online,
+          // or mark it offline if we want. Let's mark it offline if dead.
+          if (d.status !== "waking") {
+            d.status = "offline";
+          }
+        }
+      } catch (err) {
+        if (d.status !== "waking") d.status = "offline";
       }
       return d;
     });
+
+    const updated = await Promise.all(promises);
+    saveDevicesToDisk(devices);
 
     res.json({
       success: true,
@@ -536,7 +551,7 @@ async function startServer() {
   });
 
   // Ping single device
-  app.post("/api/devices/:id/ping", (req: Request, res: Response) => {
+  app.post("/api/devices/:id/ping", async (req: Request, res: Response) => {
     const { id } = req.params;
     const dev = devices.find((d) => d.id === id);
 
@@ -544,21 +559,37 @@ async function startServer() {
       return res.status(404).json({ success: false, message: "Perangkat tidak ditemukan." });
     }
 
-    if (dev.status === "online") {
-      dev.pingLatencyMs = Math.floor(Math.random() * 20) + 5;
-      dev.lastSeen = "Baru saja";
-      return res.json({
-        success: true,
-        status: "online",
-        latencyMs: dev.pingLatencyMs,
-        message: `Ping ke ${dev.ip} (${dev.name}) berhasil: ${dev.pingLatencyMs}ms.`,
-      });
-    } else {
+    try {
+      const pingRes = await ping.promise.probe(dev.ip, { timeout: 2 });
+      if (pingRes.alive) {
+        dev.status = "online";
+        dev.pingLatencyMs = Math.round(pingRes.time as number) || 1;
+        dev.lastSeen = "Baru saja";
+        saveDevicesToDisk(devices);
+        return res.json({
+          success: true,
+          status: "online",
+          latencyMs: dev.pingLatencyMs,
+          message: `Ping ke ${dev.ip} (${dev.name}) berhasil: ${dev.pingLatencyMs}ms.`,
+        });
+      } else {
+        if (dev.status !== "waking") dev.status = "offline";
+        saveDevicesToDisk(devices);
+        return res.json({
+          success: true,
+          status: "offline",
+          latencyMs: null,
+          message: `Host ${dev.ip} (${dev.name}) tidak merespon (Host Unreachable).`,
+        });
+      }
+    } catch (err) {
+      if (dev.status !== "waking") dev.status = "offline";
+      saveDevicesToDisk(devices);
       return res.json({
         success: true,
         status: "offline",
         latencyMs: null,
-        message: `Host ${dev.ip} (${dev.name}) tidak merespon (Host Unreachable).`,
+        message: `Koneksi gagal saat ping ke ${dev.ip}.`,
       });
     }
   });
