@@ -1,5 +1,6 @@
 import express, { Request, Response } from "express";
 import path from "path";
+import fs from "fs";
 import dgram from "dgram";
 import { createServer as createViteServer } from "vite";
 
@@ -32,8 +33,8 @@ interface WoLLog {
   message: string;
 }
 
-// Initial mock devices matching user request examples
-let devices: Device[] = [
+// Sample mock devices for testing or default demonstration
+const SAMPLE_DEVICES: Device[] = [
   {
     id: "dev-1",
     name: "PC Ruang Kerja",
@@ -117,7 +118,7 @@ let devices: Device[] = [
   },
 ];
 
-let activityLogs: WoLLog[] = [
+const SAMPLE_LOGS: WoLLog[] = [
   {
     id: "log-init-1",
     timestamp: new Date(Date.now() - 3600000).toISOString(),
@@ -131,6 +132,86 @@ let activityLogs: WoLLog[] = [
     message: "Magic packet WoL berhasil dikirim via broadcast UDP port 9",
   },
 ];
+
+// Persistent File Storage configuration
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
+const DEVICES_FILE = path.join(DATA_DIR, "devices.json");
+const LOGS_FILE = path.join(DATA_DIR, "logs.json");
+
+function ensureDataDirExists() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch (e) {
+    console.error("Failed to ensure data dir:", e);
+  }
+}
+
+function loadInitialDevices(): Device[] {
+  ensureDataDirExists();
+  // 1. If file already exists on disk (or in mounted volume), always load user data
+  if (fs.existsSync(DEVICES_FILE)) {
+    try {
+      const raw = fs.readFileSync(DEVICES_FILE, "utf-8");
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("Error reading devices.json, falling back:", e);
+    }
+  }
+
+  // 2. If file does not exist, check LOAD_SAMPLE_DATA environment variable
+  const shouldLoadSample =
+    process.env.LOAD_SAMPLE_DATA !== "false" &&
+    process.env.LOAD_SAMPLE_DATA !== "0" &&
+    process.env.LOAD_SAMPLE_DATA !== "no";
+
+  const initial = shouldLoadSample ? SAMPLE_DEVICES : [];
+  saveDevicesToDisk(initial);
+  return initial;
+}
+
+function saveDevicesToDisk(devs: Device[]) {
+  ensureDataDirExists();
+  try {
+    fs.writeFileSync(DEVICES_FILE, JSON.stringify(devs, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving devices.json:", e);
+  }
+}
+
+function loadInitialLogs(): WoLLog[] {
+  ensureDataDirExists();
+  if (fs.existsSync(LOGS_FILE)) {
+    try {
+      const raw = fs.readFileSync(LOGS_FILE, "utf-8");
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("Error reading logs.json:", e);
+    }
+  }
+
+  const shouldLoadSample =
+    process.env.LOAD_SAMPLE_DATA !== "false" &&
+    process.env.LOAD_SAMPLE_DATA !== "0" &&
+    process.env.LOAD_SAMPLE_DATA !== "no";
+
+  const initial = shouldLoadSample ? SAMPLE_LOGS : [];
+  saveLogsToDisk(initial);
+  return initial;
+}
+
+function saveLogsToDisk(logs: WoLLog[]) {
+  ensureDataDirExists();
+  try {
+    fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving logs.json:", e);
+  }
+}
+
+let devices: Device[] = loadInitialDevices();
+let activityLogs: WoLLog[] = loadInitialLogs();
 
 /**
  * Creates a Wake-on-LAN Magic Packet buffer (102 bytes).
@@ -239,7 +320,30 @@ async function startServer() {
     };
 
     devices.unshift(newDevice);
+    saveDevicesToDisk(devices);
     res.status(201).json({ success: true, data: newDevice, message: `Perangkat ${newDevice.name} berhasil ditambahkan.` });
+  });
+
+  // Reset to Sample Devices
+  app.post("/api/devices/reset-sample", (_req: Request, res: Response) => {
+    devices = [...SAMPLE_DEVICES];
+    saveDevicesToDisk(devices);
+    res.json({
+      success: true,
+      data: devices,
+      message: "Data contoh (sample dummy) berhasil dimuat ulang.",
+    });
+  });
+
+  // Delete all devices (Empty clean slate)
+  app.delete("/api/devices/all", (_req: Request, res: Response) => {
+    devices = [];
+    saveDevicesToDisk(devices);
+    res.json({
+      success: true,
+      data: [],
+      message: "Semua perangkat telah berhasil dihapus. Dashboard dalam keadaan bersih/kosong.",
+    });
   });
 
   // Update existing device
@@ -257,10 +361,11 @@ async function startServer() {
       id, // protect ID
     };
 
+    saveDevicesToDisk(devices);
     res.json({ success: true, data: devices[index], message: `Perangkat ${devices[index].name} diperbarui.` });
   });
 
-  // Delete device
+  // Delete single device
   app.delete("/api/devices/:id", (req: Request, res: Response) => {
     const { id } = req.params;
     const initialLength = devices.length;
@@ -271,6 +376,7 @@ async function startServer() {
       return res.status(404).json({ success: false, message: "Perangkat tidak ditemukan." });
     }
 
+    saveDevicesToDisk(devices);
     res.json({ success: true, message: `Perangkat ${target?.name || id} berhasil dihapus.` });
   });
 

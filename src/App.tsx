@@ -264,6 +264,22 @@ export default function App() {
     }
   };
 
+  // Handle Clear All Devices
+  const handleClearAll = async () => {
+    if (window.confirm("Kosongkan semua daftar perangkat? (Data dapat diisi ulang kapan saja)")) {
+      await api.clearAllDevices();
+      setDevices([]);
+      addToast("info", "Daftar Dikosongkan", "Semua perangkat telah dihapus. Dashboard dalam keadaan bersih.");
+    }
+  };
+
+  // Handle Load Sample Devices
+  const handleLoadSample = async () => {
+    const loaded = await api.loadSampleDevices();
+    setDevices(loaded);
+    addToast("success", "Contoh Data Dimuat", `${loaded.length} perangkat contoh berhasil dimuat.`);
+  };
+
   // Handle Wake All Offline PCs
   const handleWakeAll = async () => {
     const offlineDevs = devices.filter((d) => d.status === "offline");
@@ -436,6 +452,15 @@ export default function App() {
                 Reset Filter
               </button>
             )}
+            {devices.length > 0 && (
+              <button
+                onClick={handleClearAll}
+                className="text-xs px-2.5 py-1.5 rounded-xl border border-slate-800 text-slate-400 hover:text-rose-400 hover:border-rose-500/30 hover:bg-rose-500/10 transition-colors"
+                title="Hapus semua perangkat jika ingin mulai dari kosong"
+              >
+                Kosongkan Data
+              </button>
+            )}
           </div>
         </div>
 
@@ -453,22 +478,36 @@ export default function App() {
             >
               <Monitor className="w-7 h-7 stroke-[1.5]" />
             </div>
-            <h3 className="text-base font-bold">Tidak Ada Perangkat Ditemukan</h3>
-            <p className={`text-xs max-w-sm mt-1 mb-4 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {searchQuery
+            <h3 className="text-base font-bold">
+              {devices.length === 0 ? "Dashboard Siap & Masih Kosong" : "Tidak Ada Perangkat Ditemukan"}
+            </h3>
+            <p className={`text-xs max-w-md mt-1 mb-5 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+              {devices.length === 0
+                ? "Belum ada PC yang didaftarkan. Anda dapat menambahkan PC/server fisik Anda sekarang atau memuat contoh data jika diperlukan."
+                : searchQuery
                 ? `Tidak ada perangkat yang cocok dengan kata kunci "${searchQuery}".`
                 : "Belum ada PC yang terdaftar pada filter ini."}
             </p>
-            <button
-              onClick={() => {
-                setEditingDevice(null);
-                setIsAddEditOpen(true);
-              }}
-              className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 shadow-md shadow-blue-900/20"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Tambah PC Baru</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setEditingDevice(null);
+                  setIsAddEditOpen(true);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 shadow-md shadow-blue-900/20"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Tambah PC Baru</span>
+              </button>
+              {devices.length === 0 && (
+                <button
+                  onClick={handleLoadSample}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Muat Contoh Data Dummy</span>
+                </button>
+              )}
+            </div>
           </div>
         ) : viewMode === "grid" ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

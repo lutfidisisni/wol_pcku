@@ -13,6 +13,12 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      # Atur ke 'false' jika ingin deploy dalam keadaan BERSIH / KOSONG (tanpa data dummy/contoh).
+      # Atur ke 'true' jika ingin memuat contoh perangkat dummy pada instalasi pertama kali.
+      - LOAD_SAMPLE_DATA=false
+    volumes:
+      # Persistent storage agar semua perangkat yang Anda tambahkan tidak hilang saat container di-restart/update
+      - ./data:/app/data
 
     # CATATAN TEKNIS WAKE-ON-LAN DI DOCKER:
     # Magic Packet Wake-on-LAN menggunakan UDP Broadcast ke subnet LAN lokal (contoh: 192.168.x.255 / 255.255.255.255).

@@ -90,7 +90,9 @@ const STORAGE_KEY_LOGS = "wol_logs_v1";
 function getLocalDevices(): Device[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_DEVICES);
-    if (raw) return JSON.parse(raw);
+    if (raw !== null) {
+      return JSON.parse(raw);
+    }
   } catch {
     // ignore
   }
@@ -233,6 +235,32 @@ export const api = {
     const current = getLocalDevices();
     const filtered = current.filter((d) => d.id !== id);
     saveLocalDevices(filtered);
+  },
+
+  async clearAllDevices(): Promise<void> {
+    try {
+      await fetch("/api/devices/all", { method: "DELETE" });
+    } catch {
+      // ignore
+    }
+    saveLocalDevices([]);
+  },
+
+  async loadSampleDevices(): Promise<Device[]> {
+    try {
+      const res = await fetch("/api/devices/reset-sample", { method: "POST" });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.data) {
+          saveLocalDevices(json.data);
+          return json.data;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    saveLocalDevices(INITIAL_DEVICES);
+    return INITIAL_DEVICES;
   },
 
   async wakeDevice(params: {
