@@ -1,0 +1,6 @@
+{
+  "name": "Wake-on-LAN Dashboard",
+  "description": "Modern web dashboard for remote Wake-on-LAN management, device monitoring, and network PC controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
