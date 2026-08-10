@@ -2,7 +2,6 @@ import express, { Request, Response } from "express";
 import path from "path";
 import fs from "fs";
 import dgram from "dgram";
-import { createServer as createViteServer } from "vite";
 
 interface Device {
   id: string;
@@ -577,6 +576,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
