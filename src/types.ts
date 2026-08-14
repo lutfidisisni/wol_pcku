@@ -10,6 +10,15 @@ export type DeviceIconType =
 
 export type DeviceStatus = "online" | "offline" | "waking";
 
+export type PowerActionType = "shutdown" | "restart" | "sleep";
+
+export interface PowerConfig {
+  method?: "rpc" | "ssh" | "webhook" | "agent";
+  username?: string;
+  port?: number;
+  webhookUrl?: string;
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -24,6 +33,7 @@ export interface Device {
   lastWaked?: string;
   pingLatencyMs?: number;
   notes?: string;
+  powerConfig?: PowerConfig;
 }
 
 export interface WoLLog {
@@ -37,6 +47,7 @@ export interface WoLLog {
   status: "success" | "failed";
   packetHex: string;
   message: string;
+  actionType?: "wake" | "shutdown" | "restart" | "sleep" | "ping";
 }
 
 export interface ToastMessage {
@@ -57,4 +68,13 @@ export interface WoLSendResult {
     packetHex: string;
     bytesSent: number;
   };
+}
+
+export interface PowerActionResult {
+  success: boolean;
+  message: string;
+  action: PowerActionType;
+  deviceName: string;
+  targetIp: string;
+  commandSnippet?: string;
 }

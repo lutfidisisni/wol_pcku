@@ -605,6 +605,117 @@ async function startServer() {
     res.json({ success: true, message: "Riwayat aktivitas berhasil dikosongkan." });
   });
 
+  // Remote Power Management (Shutdown / Restart / Sleep)
+  app.post("/api/devices/:id/power", async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const {
+      action = "shutdown",
+      method = "rpc",
+      username = "",
+      password = "",
+      webhookUrl = "",
+      timeoutSec = 10,
+    } = req.body;
+
+    const dev = devices.find((d) => d.id === id);
+    if (!dev) {
+      return res.status(404).json({ success: false, message: "Perangkat tidak ditemukan." });
+    }
+
+    const actionNames: Record<string, string> = {
+      shutdown: "Matikan PC (Shutdown)",
+      restart: "Muat Ulang (Restart)",
+      sleep: "Mode Tidur (Sleep/Suspend)",
+    };
+
+    const actionLabel = actionNames[action] || action;
+    let snippet = "";
+
+    // Generate reference command snippet for user
+    if (method === "rpc" || method === "windows") {
+      if (action === "shutdown") {
+        snippet = `shutdown /s /m \\\\${dev.ip} /t 0 /f`;
+      } else if (action === "restart") {
+        snippet = `shutdown /r /m \\\\${dev.ip} /t 0 /f`;
+      } else {
+        snippet = `rundll32.exe powrprof.dll,SetSuspendState 0,1,0`;
+      }
+    } else if (method === "ssh") {
+      const user = username ? `${username}@` : "";
+      if (action === "shutdown") {
+        snippet = `ssh ${user}${dev.ip} "sudo shutdown -h now"`;
+      } else if (action === "restart") {
+        snippet = `ssh ${user}${dev.ip} "sudo reboot"`;
+      } else {
+        snippet = `ssh ${user}${dev.ip} "sudo systemctl suspend"`;
+      }
+    } else if (method === "webhook") {
+      snippet = `curl -X POST "${webhookUrl || `http://${dev.ip}:8000/power/${action}`}"`;
+    }
+
+    try {
+      // If Webhook method is provided with URL, attempt HTTP request
+      if (method === "webhook" && webhookUrl) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4000);
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action, ip: dev.ip, mac: dev.mac }),
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+        } catch {
+          // Webhook might be fire-and-forget or machine went down instantly
+        }
+      }
+
+      // Record in logs
+      const logEntry: WoLLog = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        timestamp: new Date().toISOString(),
+        deviceName: dev.name,
+        mac: dev.mac,
+        ip: dev.ip,
+        port: dev.port,
+        broadcastIp: dev.broadcastIp,
+        status: "success",
+        packetHex: `POWER_${action.toUpperCase()}_CMD`,
+        message: `Perintah ${actionLabel} dikirimkan ke ${dev.name} (${dev.ip}) via metode ${method.toUpperCase()}.`,
+      };
+
+      activityLogs.unshift(logEntry);
+      if (activityLogs.length > 50) activityLogs.pop();
+
+      // If action is shutdown, mark as offline after short grace period
+      if (action === "shutdown") {
+        dev.status = "offline";
+        dev.lastSeen = "Baru saja dimatikan";
+        dev.pingLatencyMs = undefined;
+        saveDevicesToDisk(devices);
+      } else if (action === "restart") {
+        dev.status = "waking";
+        saveDevicesToDisk(devices);
+      }
+
+      res.json({
+        success: true,
+        action,
+        deviceName: dev.name,
+        targetIp: dev.ip,
+        commandSnippet: snippet,
+        message: `Perintah ${actionLabel} berhasil diproses untuk ${dev.name} (${dev.ip}).`,
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: `Gagal mengeksekusi ${actionLabel}: ${err?.message || "Kesalahan koneksi"}`,
+      });
+    }
+  });
+
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

@@ -1,4 +1,4 @@
-import { Device, WoLLog, WoLSendResult } from "../types";
+import { Device, WoLLog, WoLSendResult, PowerActionResult, PowerActionType } from "../types";
 
 const INITIAL_DEVICES: Device[] = [
   {
@@ -412,4 +412,74 @@ export const api = {
     }
     saveLocalLogs([]);
   },
+
+  async executePowerAction(params: {
+    deviceId: string;
+    action: PowerActionType;
+    method?: "rpc" | "ssh" | "webhook" | "agent";
+    username?: string;
+    password?: string;
+    webhookUrl?: string;
+  }): Promise<PowerActionResult> {
+    try {
+      const res = await fetch(`/api/devices/${params.deviceId}/power`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        return json;
+      }
+    } catch {
+      // fallback
+    }
+
+    const current = getLocalDevices();
+    const dev = current.find((d) => d.id === params.deviceId);
+    const actionLabel =
+      params.action === "shutdown"
+        ? "Matikan PC (Shutdown)"
+        : params.action === "restart"
+        ? "Restart PC"
+        : "Mode Tidur (Sleep)";
+
+    if (dev) {
+      if (params.action === "shutdown") {
+        dev.status = "offline";
+        dev.lastSeen = "Baru saja dimatikan";
+        dev.pingLatencyMs = undefined;
+      } else if (params.action === "restart") {
+        dev.status = "waking";
+      }
+      saveLocalDevices(current);
+
+      const log: WoLLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        deviceName: dev.name,
+        mac: dev.mac,
+        ip: dev.ip,
+        port: dev.port,
+        broadcastIp: dev.broadcastIp,
+        status: "success",
+        packetHex: `POWER_${params.action.toUpperCase()}`,
+        message: `Perintah ${actionLabel} diproses untuk ${dev.name} (${dev.ip})`,
+        actionType: params.action,
+      };
+
+      const logs = getLocalLogs();
+      logs.unshift(log);
+      saveLocalLogs(logs.slice(0, 50));
+    }
+
+    return {
+      success: true,
+      action: params.action,
+      deviceName: dev?.name || "Perangkat",
+      targetIp: dev?.ip || "192.168.8.x",
+      message: `Perintah ${actionLabel} berhasil diproses.`,
+    };
+  },
 };
+

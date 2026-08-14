@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useTransition } from "react";
-import { Device, WoLLog, ToastMessage } from "./types";
+import { Device, WoLLog, ToastMessage, PowerActionType } from "./types";
 import { api } from "./services/api";
 import { Navbar } from "./components/Navbar";
 import { NetworkStats } from "./components/NetworkStats";
@@ -10,6 +10,7 @@ import { ManualWoLModal } from "./components/ManualWoLModal";
 import { ActivityLogDrawer } from "./components/ActivityLogDrawer";
 import { DeviceDetailModal } from "./components/DeviceDetailModal";
 import { WoLGuideModal } from "./components/WoLGuideModal";
+import { PowerControlModal } from "./components/PowerControlModal";
 import { ToastContainer } from "./components/Toast";
 import {
   Monitor,
@@ -40,6 +41,7 @@ export default function App() {
   const [pingingDeviceIds, setPingingDeviceIds] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isWakingAll, setIsWakingAll] = useState(false);
+  const [pollInterval, setPollInterval] = useState<number>(5); // default 5 seconds auto-poll
 
   // Modals & Drawers
   const [isAddEditOpen, setIsAddEditOpen] = useState(false);
@@ -48,6 +50,7 @@ export default function App() {
   const [isLogsDrawerOpen, setIsLogsDrawerOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [inspectDevice, setInspectDevice] = useState<Device | null>(null);
+  const [powerDevice, setPowerDevice] = useState<Device | null>(null);
 
   // Toast Helper
   const addToast = (type: ToastMessage["type"], title: string, message: string) => {
@@ -80,6 +83,30 @@ export default function App() {
     }
     loadData();
   }, []);
+
+  // Background Auto-Polling Engine (Synchronizes status every N seconds)
+  useEffect(() => {
+    if (pollInterval <= 0) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const updated = await api.pingAll();
+        setDevices((prev) => {
+          return updated.map((up) => {
+            // Keep "waking" state if currently in active boot cycle
+            if (wakingDeviceIds.has(up.id) && up.status !== "online") {
+              return { ...up, status: "waking" };
+            }
+            return up;
+          });
+        });
+      } catch {
+        // silent background probe
+      }
+    }, pollInterval * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [pollInterval, wakingDeviceIds]);
 
   // Compute available groups for dropdown
   const availableGroups = useMemo(() => {
@@ -121,6 +148,81 @@ export default function App() {
     });
   }, [devices, searchQuery, statusFilter, groupFilter]);
 
+  // Handle Power Action (Shutdown / Restart / Sleep)
+  const handleOpenPowerModal = (device: Device) => {
+    setPowerDevice(device);
+  };
+
+  const handleExecutePower = async (params: {
+    deviceId: string;
+    action: PowerActionType;
+    method?: "rpc" | "ssh" | "webhook" | "agent";
+    username?: string;
+    password?: string;
+    webhookUrl?: string;
+  }) => {
+    const dev = devices.find((d) => d.id === params.deviceId);
+    const actionLabel =
+      params.action === "shutdown"
+        ? "Shutdown"
+        : params.action === "restart"
+        ? "Restart"
+        : "Sleep";
+
+    try {
+      const result = await api.executePowerAction(params);
+      if (result.success) {
+        addToast(
+          "success",
+          `Perintah ${actionLabel} Terkirim!`,
+          `Perintah ${actionLabel} berhasil disiarkan ke ${result.deviceName} (${result.targetIp}).`
+        );
+        // Refresh local devices & logs
+        const updatedDevs = await api.getDevices();
+        const updatedLogs = await api.getLogs();
+        setDevices(updatedDevs);
+        setLogs(updatedLogs);
+
+        // Fast burst polling to immediately catch host power-off / reboot state
+        let burstCount = 0;
+        const burstTimer = setInterval(async () => {
+          burstCount++;
+          try {
+            const probe = await api.pingDevice(params.deviceId);
+            if (params.action === "shutdown" || params.action === "sleep") {
+              if (probe.status === "offline") {
+                clearInterval(burstTimer);
+                setDevices((prev) =>
+                  prev.map((d) => (d.id === params.deviceId ? { ...d, status: "offline" } : d))
+                );
+                addToast("info", `${dev?.name || "PC"} Telah Mati`, `Host ${dev?.ip || ""} sekarang Offline.`);
+              }
+            } else if (params.action === "restart") {
+              if (probe.status === "online" && burstCount > 3) {
+                clearInterval(burstTimer);
+                setDevices((prev) =>
+                  prev.map((d) => (d.id === params.deviceId ? { ...d, status: "online" } : d))
+                );
+                addToast("success", `${dev?.name || "PC"} Berhasil Restart`, `Host ${dev?.ip || ""} telah kembali Online.`);
+              }
+            }
+          } catch {
+            // ignore
+          }
+          if (burstCount >= 12) clearInterval(burstTimer); // stop after 24s
+        }, 2000);
+      } else {
+        addToast("error", `Gagal Menjalankan ${actionLabel}`, result.message);
+      }
+    } catch (err: any) {
+      addToast(
+        "error",
+        "Kesalahan Eksekusi",
+        err?.message || "Gagal mengirimkan perintah daya ke perangkat."
+      );
+    }
+  };
+
   // Handle Wake Single PC
   const handleWakeDevice = async (device: Device) => {
     const devId = device.id;
@@ -151,37 +253,56 @@ export default function App() {
         const updatedLogs = await api.getLogs();
         setLogs(updatedLogs);
 
-        // Tunggu 5 detik lalu coba ping sesungguhnya
-        setTimeout(async () => {
+        // Fast Burst Polling: probe every 2 seconds for up to 30 seconds to catch the exact moment it boots up!
+        let pingCount = 0;
+        const maxProbes = 15; // 15 x 2s = 30s
+        const burstPingTimer = setInterval(async () => {
+          pingCount++;
           try {
             const pingRes = await api.pingDevice(devId);
-            setDevices((prev) =>
-              prev.map((d) =>
-                d.id === devId
-                  ? {
-                      ...d,
-                      status: pingRes.status,
-                      lastSeen: pingRes.status === "online" ? "Baru saja" : d.lastSeen,
-                      pingLatencyMs: pingRes.latencyMs || undefined,
-                    }
-                  : d
-              )
-            );
             if (pingRes.status === "online") {
-              addToast("info", `${device.name} Online`, `Host ${device.ip} telah boot dan merespon sinyal ping.`);
-            } else {
-              addToast("warning", `${device.name} Belum Online`, `Host ${device.ip} belum merespon setelah dikirimkan Wake-on-LAN.`);
+              clearInterval(burstPingTimer);
+              setDevices((prev) =>
+                prev.map((d) =>
+                  d.id === devId
+                    ? {
+                        ...d,
+                        status: "online",
+                        lastSeen: "Baru saja",
+                        pingLatencyMs: pingRes.latencyMs || 10,
+                      }
+                    : d
+                )
+              );
+              setWakingDeviceIds((prev) => {
+                const next = new Set(prev);
+                next.delete(devId);
+                return next;
+              });
+              addToast("success", `${device.name} Online!`, `Host ${device.ip} telah boot dan merespon sinyal ping.`);
+            } else if (pingCount >= maxProbes) {
+              clearInterval(burstPingTimer);
+              setWakingDeviceIds((prev) => {
+                const next = new Set(prev);
+                next.delete(devId);
+                return next;
+              });
+              setDevices((prev) =>
+                prev.map((d) => (d.id === devId ? { ...d, status: "offline" } : d))
+              );
+              addToast("warning", `${device.name} Belum Merespon`, `Host ${device.ip} belum membalas ping setelah 30 detik. Pastikan WoL & BIOS sudah aktif.`);
             }
-          } catch (e) {
-            setDevices((prev) => prev.map((d) => (d.id === devId ? { ...d, status: "offline" } : d)));
-          } finally {
-            setWakingDeviceIds((prev) => {
-              const next = new Set(prev);
-              next.delete(devId);
-              return next;
-            });
+          } catch {
+            if (pingCount >= maxProbes) {
+              clearInterval(burstPingTimer);
+              setWakingDeviceIds((prev) => {
+                const next = new Set(prev);
+                next.delete(devId);
+                return next;
+              });
+            }
           }
-        }, 5000);
+        }, 2000);
       } else {
         throw new Error(result.message || "Gagal mengirim paket.");
       }
@@ -403,9 +524,11 @@ export default function App() {
         onOpenManualModal={() => setIsManualWoLOpen(true)}
         onOpenLogsDrawer={() => setIsLogsDrawerOpen(true)}
         onOpenGuideModal={() => setIsGuideOpen(true)}
+        onRefreshAll={handleRefreshAll}
+        isRefreshing={isRefreshing}
         logCount={logs.length}
-        isDark={isDark}
-        onToggleTheme={() => setIsDark(!isDark)}
+        pollInterval={pollInterval}
+        onPollIntervalChange={setPollInterval}
       />
 
       {/* Main Content Dashboard */}
@@ -523,6 +646,7 @@ export default function App() {
                 isDark={isDark}
                 onWake={handleWakeDevice}
                 onPing={handlePingDevice}
+                onPowerAction={handleOpenPowerModal}
                 onEdit={(d) => {
                   setEditingDevice(d);
                   setIsAddEditOpen(true);
@@ -540,6 +664,7 @@ export default function App() {
             isDark={isDark}
             onWake={handleWakeDevice}
             onPing={handlePingDevice}
+            onPowerAction={handleOpenPowerModal}
             onEdit={(d) => {
               setEditingDevice(d);
               setIsAddEditOpen(true);
@@ -594,9 +719,19 @@ export default function App() {
           setEditingDevice(d);
           setIsAddEditOpen(true);
         }}
+        onPowerAction={handleOpenPowerModal}
         isDark={isDark}
         isWaking={inspectDevice ? wakingDeviceIds.has(inspectDevice.id) : false}
         isPinging={inspectDevice ? pingingDeviceIds.has(inspectDevice.id) : false}
+      />
+
+      {/* Remote Power Action Control Modal (Shutdown, Restart, Sleep) */}
+      <PowerControlModal
+        device={powerDevice}
+        isOpen={!!powerDevice}
+        onClose={() => setPowerDevice(null)}
+        onExecute={handleExecutePower}
+        isDark={isDark}
       />
 
       {/* Setup Guide Modal (BIOS, Windows, Linux, Subnet) */}
@@ -605,6 +740,7 @@ export default function App() {
         onClose={() => setIsGuideOpen(false)}
         isDark={isDark}
       />
+
 
       {/* Floating Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

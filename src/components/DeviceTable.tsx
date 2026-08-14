@@ -23,6 +23,7 @@ interface DeviceTableProps {
   onEdit: (device: Device) => void;
   onDelete: (device: Device) => void;
   onInspect: (device: Device) => void;
+  onPowerAction: (device: Device) => void;
   wakingDeviceIds: Set<string>;
   pingingDeviceIds: Set<string>;
   onBatchWake: (devices: Device[]) => Promise<void>;
@@ -35,6 +36,7 @@ export const DeviceTable: React.FC<DeviceTableProps> = ({
   onEdit,
   onDelete,
   onInspect,
+  onPowerAction,
   wakingDeviceIds,
   pingingDeviceIds,
   onBatchWake,
@@ -220,55 +222,88 @@ export const DeviceTable: React.FC<DeviceTableProps> = ({
 
                     {/* Status Badge */}
                     <td className="p-4">
-                      {isOnline ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-green-500/10 text-green-500 border border-green-500/20 uppercase tracking-tighter w-fit">
-                            <span>Online</span>
-                          </span>
-                          <span className="text-[10px] font-mono text-emerald-400/80 flex items-center gap-1 mt-0.5">
-                            <Activity className="w-3 h-3" />
-                            {device.pingLatencyMs || 10} ms
-                          </span>
-                        </div>
-                      ) : isWaking ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-tighter animate-pulse w-fit">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Booting...</span>
-                        </span>
-                      ) : (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-500 border border-red-500/20 uppercase tracking-tighter w-fit">
-                            <span>Offline</span>
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {device.lastSeen || "Standby"}
-                          </span>
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => onPing(device)}
+                        disabled={isPinging}
+                        className="text-left group cursor-pointer"
+                        title="Klik untuk ping & perbarui status sekarang"
+                      >
+                        {isOnline ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 group-hover:bg-emerald-500/20 uppercase tracking-tighter w-fit transition-all">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>{isPinging ? "Checking..." : "Online"}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-emerald-400/80 flex items-center gap-1 mt-0.5 pl-1">
+                              <Activity className="w-3 h-3" />
+                              {device.pingLatencyMs || 10} ms
+                            </span>
+                          </div>
+                        ) : isWaking ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30 uppercase tracking-tighter animate-pulse group-hover:bg-amber-500/20 w-fit transition-all">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Booting...</span>
+                            </span>
+                            <span className="text-[10px] text-amber-400/80 font-mono pl-1">
+                              Menunggu respon
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30 group-hover:bg-rose-500/20 uppercase tracking-tighter w-fit transition-all">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                              <span>{isPinging ? "Checking..." : "Offline"}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono pl-1">
+                              {device.lastSeen || "Standby"}
+                            </span>
+                          </div>
+                        )}
+                      </button>
                     </td>
 
                     {/* Actions */}
                     <td className="p-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        {/* Turn On Button */}
+                        {/* Turn On / WoL Button */}
                         <button
                           id={`table-wake-btn-${device.id}`}
                           onClick={() => onWake(device)}
-                          disabled={isWaking || isOnline}
-                          className={`flex items-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                            isOnline
-                              ? "bg-slate-800 text-slate-400 cursor-not-allowed border border-slate-700/30"
-                              : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20 cursor-pointer"
+                          disabled={isWaking}
+                          className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all active:scale-95 cursor-pointer ${
+                            isWaking
+                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                              : isOnline
+                              ? "bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40"
+                              : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm shadow-blue-600/20"
                           }`}
-                          title={isOnline ? "Host is running" : "Turn On PC via WoL"}
+                          title="Kirim Magic Packet WoL"
                         >
                           {isWaking ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
                           ) : (
-                            <Power className="w-3.5 h-3.5" />
+                            <Zap className="w-3.5 h-3.5" />
                           )}
-                          <span>{isOnline ? "Running" : "Turn On"}</span>
+                          <span>{isWaking ? "Booting" : "Nyalakan"}</span>
                         </button>
+
+                        {/* Shutdown Button */}
+                        <button
+                          id={`table-power-btn-${device.id}`}
+                          onClick={() => onPowerAction(device)}
+                          className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all active:scale-95 cursor-pointer ${
+                            isOnline
+                              ? "bg-rose-600 hover:bg-rose-500 text-white shadow-sm shadow-rose-600/20"
+                              : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                          }`}
+                          title="Matikan PC / Restart"
+                        >
+                          <Power className="w-3.5 h-3.5 text-rose-400 group-hover:text-white" />
+                          <span>Matikan</span>
+                        </button>
+
 
                         {/* Ping Test */}
                         <button

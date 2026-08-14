@@ -8,6 +8,7 @@ import {
   Monitor,
   Terminal,
   Wifi,
+  Power,
 } from "lucide-react";
 
 interface WoLGuideModalProps {
@@ -59,36 +60,84 @@ export const WoLGuideModal: React.FC<WoLGuideModalProps> = ({
         </div>
 
         <div className="mt-5 space-y-4 text-xs overflow-y-auto max-h-[65vh] pr-1">
-          {/* Step 1: BIOS/UEFI */}
+          {/* Step 1: BIOS/UEFI ASRock */}
           <div className="p-4 rounded-xl border border-slate-800/90 bg-slate-950/50 space-y-2">
             <div className="flex items-center gap-2 text-sky-400 font-bold text-sm">
               <Cpu className="w-4 h-4" />
-              <span>1. Pengaturan BIOS / UEFI Motherboard</span>
+              <span>1. Pengaturan BIOS / UEFI ASRock H510M-H2</span>
             </div>
             <p className="text-slate-300 leading-relaxed">
               Masuk ke BIOS/UEFI (tekan tombol <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono">DEL</kbd> atau <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-[11px] font-mono">F2</kbd> saat PC baru menyala):
             </p>
             <ul className="list-disc list-inside space-y-1 text-slate-400 ml-1">
-              <li>Cari menu <strong className="text-slate-200">Power Management</strong> / <strong className="text-slate-200">ACPI Configuration</strong>.</li>
-              <li>Aktifkan <strong className="text-emerald-400">"Power On By PCIE/PCI Device"</strong> atau <strong className="text-emerald-400">"Wake on LAN (WoL)"</strong>.</li>
-              <li>Nonaktifkan (Disable) mode hemat daya agresif seperti <strong className="text-amber-400">"ErP / EuP Ready"</strong> atau <strong className="text-amber-400">"Deep Sleep State"</strong> agar port LAN tetap mendapatkan standby power (+5VSB) saat PC mati.</li>
+              <li>Menu <strong className="text-slate-200">Advanced</strong> &rarr; <strong className="text-slate-200">ACPI Configuration</strong>.</li>
+              <li>Pastikan <strong className="text-emerald-400">"PCIE Devices Power On"</strong> diset ke <strong className="text-emerald-400">Enabled</strong>.</li>
+              <li>
+                <strong className="text-amber-400">PENTING (ASRock Deep Sleep):</strong> Cari pengaturan <strong className="text-amber-400">"Deep Sleep"</strong> dan ubah menjadi <strong className="text-rose-400">Disabled</strong> (atau Disabled in S4-S5). Jika Deep Sleep aktif, motherboard ASRock akan memutus aliran listrik standby (+5VSB) ke port LAN saat PC mati sehingga lampu LAN mati dan tidak bisa mendengarkan Magic Packet!
+              </li>
+              <li>Pastikan lampu LED kuning/hijau pada port LAN di belakang motherboard tetap menyala kecil saat PC mati (tanda standby WoL aktif).</li>
             </ul>
           </div>
 
-          {/* Step 2: Windows OS Config */}
+          {/* Step 2: Windows OS Config & Driver Realtek */}
           <div className="p-4 rounded-xl border border-slate-800/90 bg-slate-950/50 space-y-2">
             <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
               <Monitor className="w-4 h-4" />
-              <span>2. Pengaturan Driver Kartu Jaringan (Windows 10 / 11)</span>
+              <span>2. Pengaturan Driver Kartu Jaringan Realtek (Windows 10 / 11)</span>
             </div>
             <ul className="list-disc list-inside space-y-1 text-slate-400 ml-1">
-              <li>Buka <strong className="text-slate-200">Device Manager</strong> &rarr; <strong className="text-slate-200">Network Adapters</strong>.</li>
-              <li>Klik kanan pada kartu Ethernet (misal: Realtek / Intel Gigabit) &rarr; <strong className="text-slate-200">Properties</strong>.</li>
-              <li>Pada tab <strong className="text-slate-200">Power Management</strong>: centang <em className="text-slate-200">"Allow this device to wake the computer"</em> dan <em className="text-slate-200">"Only allow a magic packet to wake the computer"</em>.</li>
-              <li>Pada tab <strong className="text-slate-200">Advanced</strong>: set <strong className="text-emerald-400">"Wake on Magic Packet"</strong> menjadi <strong className="text-emerald-400">Enabled</strong>.</li>
-              <li><em>Tips:</em> Nonaktifkan <strong className="text-amber-400">"Fast Startup"</strong> di Windows Control Panel Power Options jika PC menolak bangun saat shut down penuh.</li>
+              <li>Buka <strong className="text-slate-200">Device Manager</strong> &rarr; <strong className="text-slate-200">Network Adapters</strong> &rarr; klik kanan pada <strong className="text-slate-200">Realtek PCIe GbE Family Controller</strong> &rarr; <strong className="text-slate-200">Properties</strong>.</li>
+              <li>
+                <strong className="text-sky-400">Pada Tab Power Management:</strong>
+                <div className="pl-4 pt-1 space-y-0.5 text-slate-300">
+                  <div>1. Centang <em className="text-emerald-400">"Allow the computer to turn off this device to save power"</em> (wajib dicentang terlebih dahulu agar opsi di bawahnya aktif).</div>
+                  <div>2. Centang <em className="text-emerald-400">"Allow this device to wake the computer"</em>.</div>
+                  <div>3. Centang <em className="text-emerald-400">"Only allow a magic packet to wake the computer"</em>.</div>
+                </div>
+              </li>
+              <li className="pt-1">
+                <strong className="text-sky-400">Pada Tab Advanced (Pengaturan Lanjutan Realtek):</strong>
+                <div className="pl-4 pt-1 space-y-0.5 text-slate-300">
+                  <div>• <strong className="text-slate-200">Wake on Magic Packet</strong>: <span className="text-emerald-400 font-semibold">Enabled</span></div>
+                  <div>• <strong className="text-slate-200">Shutdown Wake-On-Lan</strong>: <span className="text-emerald-400 font-semibold">Enabled</span></div>
+                  <div>• <strong className="text-slate-200">Energy Efficient Ethernet / Green Ethernet</strong>: <span className="text-amber-400 font-semibold">Disabled</span></div>
+                </div>
+              </li>
+              <li className="pt-1">
+                <strong className="text-rose-400">Wajib Matikan Windows "Fast Startup":</strong> Buka Control Panel &rarr; Power Options &rarr; <em>"Choose what the power buttons do"</em> &rarr; klik <em>"Change settings that are currently unavailable"</em> &rarr; <strong>Hapus centang (Uncheck) "Turn on fast startup"</strong> &rarr; Save changes. (Fast Startup mengunci kartu jaringan sehingga mengabaikan Magic Packet).
+              </li>
             </ul>
           </div>
+
+          {/* Step 3: Remote Shutdown Guide */}
+          <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-950/20 space-y-2">
+            <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+              <Power className="w-4 h-4" />
+              <span>3. Panduan Fitur Remote Shutdown (Matikan PC Jarak Jauh)</span>
+            </div>
+            <p className="text-slate-300 leading-relaxed">
+              Berbeda dengan WoL (yang menggunakan broadcast hardware tanpa sistem operasi), <strong>Shutdown</strong> memerlukan izin pada level OS (Windows/Linux):
+            </p>
+            <div className="space-y-2 text-slate-400 text-xs">
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                <div className="text-sky-400 font-semibold mb-1">Opsi 1: Windows RPC / Native Remote (Tanpa Instal Aplikasi)</div>
+                <p className="text-[11px] text-slate-300">
+                  Jalankan PowerShell sebagai Administrator pada PC target dan masukkan perintah:
+                </p>
+                <div className="mt-1 p-2 rounded bg-black/60 text-emerald-400 font-mono text-[11px] select-all">
+                  reg add HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v LocalAccountTokenFilterPolicy /t REG_DWORD /d 1 /f
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                <div className="text-violet-400 font-semibold mb-1">Opsi 2: SSH Protocol (Linux &amp; Windows OpenSSH)</div>
+                <p className="text-[11px] text-slate-300">
+                  Aktifkan OpenSSH Server pada target PC (Windows Settings &rarr; Optional Features &rarr; OpenSSH Server). Dashboard dapat mengirimkan perintah <code className="text-amber-300 font-mono">shutdown /s /t 0</code> secara aman.
+                </p>
+              </div>
+            </div>
+          </div>
+
 
           {/* Step 3: Linux OS Config */}
           <div className="p-4 rounded-xl border border-slate-800/90 bg-slate-950/50 space-y-2">

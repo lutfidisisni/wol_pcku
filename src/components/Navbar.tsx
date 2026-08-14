@@ -33,6 +33,8 @@ interface NavbarProps {
   onRefreshAll: () => void;
   isRefreshing: boolean;
   logCount: number;
+  pollInterval: number; // in seconds, 0 = off
+  onPollIntervalChange: (seconds: number) => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -52,6 +54,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefreshAll,
   isRefreshing,
   logCount,
+  pollInterval,
+  onPollIntervalChange,
 }) => {
   return (
     <header
@@ -73,16 +77,54 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Actions Button Bar */}
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Auto-Sync Interval Selector with Pulsing Live Dot */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-800 bg-[#111114] text-xs">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  pollInterval > 0
+                    ? isRefreshing
+                      ? "bg-amber-400 animate-ping"
+                      : "bg-emerald-400 shadow-xs shadow-emerald-400 animate-pulse"
+                    : "bg-slate-600"
+                }`}
+                title={pollInterval > 0 ? "Auto-Sync Aktif" : "Auto-Sync Nonaktif"}
+              />
+              <span className="text-[11px] text-slate-400 font-medium hidden md:inline">Sync:</span>
+              <select
+                id="select-poll-interval"
+                value={pollInterval}
+                onChange={(e) => onPollIntervalChange(Number(e.target.value))}
+                className="bg-transparent text-slate-200 text-xs font-medium cursor-pointer focus:outline-none pr-1"
+                title="Atur interval auto-refresh status"
+              >
+                <option value={3} className="bg-[#111114] text-slate-200">
+                  3s (Cepat / Realtime)
+                </option>
+                <option value={5} className="bg-[#111114] text-slate-200">
+                  5s (Standar)
+                </option>
+                <option value={10} className="bg-[#111114] text-slate-200">
+                  10s
+                </option>
+                <option value={30} className="bg-[#111114] text-slate-200">
+                  30s
+                </option>
+                <option value={0} className="bg-[#111114] text-slate-200">
+                  Manual (Off)
+                </option>
+              </select>
+            </div>
+
             {/* Quick Refresh Status */}
             <button
               id="btn-nav-refresh"
               onClick={onRefreshAll}
               disabled={isRefreshing}
-              className="p-2.5 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded-xl border border-slate-700/60 transition-colors"
-              title="Refresh dan Ping seluruh perangkat"
+              className="p-2.5 text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded-xl border border-slate-700/60 transition-all active:scale-95 cursor-pointer"
+              title="Ping & Refresh Semua Host Sekarang"
               aria-label="Refresh status"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-400" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-sky-400" : ""}`} />
             </button>
 
             {/* Manual WoL Packet Sender */}

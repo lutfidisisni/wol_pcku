@@ -22,6 +22,7 @@ interface DeviceDetailModalProps {
   onWake: (device: Device) => Promise<void>;
   onPing: (device: Device) => Promise<void>;
   onEdit: (device: Device) => void;
+  onPowerAction?: (device: Device) => void;
   isDark: boolean;
   isWaking: boolean;
   isPinging: boolean;
@@ -34,6 +35,7 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
   onWake,
   onPing,
   onEdit,
+  onPowerAction,
   isDark,
   isWaking,
   isPinging,
@@ -234,6 +236,20 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isOnline && onPowerAction && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onPowerAction(device);
+                }}
+                className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:border-rose-500/50 font-semibold text-xs flex items-center gap-2 transition-all"
+                title="Matikan atau Restart PC ini"
+              >
+                <Power className="w-3.5 h-3.5 text-rose-400" />
+                <span>Matikan / Restart</span>
+              </button>
+            )}
+
             <button
               onClick={() => onWake(device)}
               disabled={isWaking}
@@ -253,6 +269,7 @@ export const DeviceDetailModal: React.FC<DeviceDetailModalProps> = ({
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );

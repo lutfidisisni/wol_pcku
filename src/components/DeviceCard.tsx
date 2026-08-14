@@ -12,6 +12,8 @@ import {
   Radio,
   Eye,
   Zap,
+  RotateCcw,
+  Moon,
 } from "lucide-react";
 import { Device } from "../types";
 import { DeviceIcon, DEVICE_TYPE_LABELS } from "./DeviceIcon";
@@ -24,6 +26,7 @@ interface DeviceCardProps {
   onEdit: (device: Device) => void;
   onDelete: (device: Device) => void;
   onInspect: (device: Device) => void;
+  onPowerAction: (device: Device) => void;
   isWaking: boolean;
   isPinging: boolean;
 }
@@ -35,6 +38,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
   onEdit,
   onDelete,
   onInspect,
+  onPowerAction,
   isWaking,
   isPinging,
 }) => {
@@ -69,29 +73,32 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
           </div>
 
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {/* Status Pill (Exact from Design HTML) */}
-            {isOnline ? (
+            {/* Interactive Status Badge (Click to re-check ping status) */}
+            <button
+              type="button"
+              id={`status-badge-${device.id}`}
+              onClick={() => onPing(device)}
+              disabled={isPinging}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-full border uppercase tracking-tight flex items-center gap-1.5 transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                isOnline
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20"
+                  : isWakingUp
+                  ? "bg-amber-500/10 text-amber-300 border-amber-500/30 animate-pulse hover:bg-amber-500/20"
+                  : "bg-rose-500/10 text-rose-400 border-rose-500/30 hover:bg-rose-500/20"
+              }`}
+              title="Klik untuk ping dan perbarui status sekarang"
+            >
               <span
-                id={`status-badge-${device.id}`}
-                className="px-3 py-1 bg-green-500/10 text-green-500 text-xs font-semibold rounded-full border border-green-500/20 uppercase tracking-tighter"
-              >
-                Online
-              </span>
-            ) : isWakingUp ? (
-              <span
-                id={`status-badge-${device.id}`}
-                className="px-3 py-1 bg-amber-500/10 text-amber-400 text-xs font-semibold rounded-full border border-amber-500/20 uppercase tracking-tighter animate-pulse"
-              >
-                Booting
-              </span>
-            ) : (
-              <span
-                id={`status-badge-${device.id}`}
-                className="px-3 py-1 bg-red-500/10 text-red-500 text-xs font-semibold rounded-full border border-red-500/20 uppercase tracking-tighter"
-              >
-                Offline
-              </span>
-            )}
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isOnline
+                    ? "bg-emerald-400 shadow-xs shadow-emerald-400"
+                    : isWakingUp
+                    ? "bg-amber-400 animate-ping"
+                    : "bg-rose-400"
+                }`}
+              />
+              <span>{isPinging ? "Checking..." : isOnline ? "Online" : isWakingUp ? "Booting" : "Offline"}</span>
+            </button>
 
             {/* Menu options */}
             <div className="relative">
@@ -109,7 +116,7 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                   <div className="fixed inset-0 z-20" onClick={() => setShowMenu(false)} />
                   <div
                     id={`device-menu-dropdown-${device.id}`}
-                    className="absolute right-0 top-8 z-30 w-44 rounded-xl border border-slate-800 bg-[#09090b] text-slate-200 shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-150"
+                    className="absolute right-0 top-8 z-30 w-48 rounded-xl border border-slate-800 bg-[#09090b] text-slate-200 shadow-2xl p-1.5 text-xs animate-in fade-in zoom-in-95 duration-150"
                   >
                     <button
                       onClick={() => {
@@ -122,6 +129,19 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
                       <Activity className="w-3.5 h-3.5 text-sky-400" />
                       <span>Ping Check</span>
                     </button>
+
+                    {isOnline && (
+                      <button
+                        onClick={() => {
+                          setShowMenu(false);
+                          onPowerAction(device);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs rounded-lg hover:bg-slate-800 text-rose-400 transition-colors text-left font-medium"
+                      >
+                        <Power className="w-3.5 h-3.5" />
+                        <span>Matikan / Restart</span>
+                      </button>
+                    )}
 
                     <button
                       onClick={() => {
@@ -227,37 +247,62 @@ export const DeviceCard: React.FC<DeviceCardProps> = ({
         </div>
       </div>
 
-      {/* Button Action (Exact from Design HTML) */}
-      <div className="mt-6" onClick={(e) => e.stopPropagation()}>
-        {isOnline ? (
-          <button
-            id={`btn-running-${device.id}`}
-            className="w-full py-2.5 bg-slate-800 text-slate-400 rounded-xl font-semibold cursor-not-allowed text-sm uppercase tracking-wide flex items-center justify-center gap-2 border border-slate-700/30"
-            disabled
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>System Running</span>
-          </button>
-        ) : isWakingUp ? (
-          <button
-            disabled
-            className="w-full py-2.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-xl font-semibold text-sm uppercase tracking-wide flex items-center justify-center gap-2 cursor-wait"
-          >
-            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-            <span>Booting Up...</span>
-          </button>
-        ) : (
+      {/* Button Action - Dual Instant Access Controls */}
+      <div className="mt-5 pt-4 border-t border-slate-800/80" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          {/* Nyalakan (Turn On / WoL) Button */}
           <button
             id={`btn-wake-${device.id}`}
             onClick={() => onWake(device)}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold text-sm uppercase tracking-wide transition-colors shadow-md shadow-blue-600/20 active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+            disabled={isWaking}
+            className={`flex-1 py-2.5 px-3 rounded-xl font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer ${
+              isWakingUp
+                ? "bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30"
+                : isOnline
+                ? "bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40"
+                : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30"
+            }`}
+            title="Kirim Magic Packet (Wake-on-LAN) untuk menyalakan PC"
           >
-            <Power className="w-4 h-4" />
-            <span>Turn On</span>
+            {isWaking ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+            ) : (
+              <Zap className="w-3.5 h-3.5" />
+            )}
+            <span>{isWakingUp ? "Kirim Ulang WoL" : "Nyalakan"}</span>
           </button>
-        )}
+
+          {/* Matikan (Shutdown / Restart / Sleep) Button */}
+          <button
+            id={`btn-power-${device.id}`}
+            onClick={() => onPowerAction(device)}
+            className={`flex-1 py-2.5 px-3 rounded-xl font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm cursor-pointer ${
+              isOnline
+                ? "bg-rose-600 hover:bg-rose-500 text-white shadow-rose-600/30"
+                : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30"
+            }`}
+            title="Kirim sinyal Shutdown / Restart / Sleep ke sistem operasi"
+          >
+            <Power className="w-3.5 h-3.5 text-rose-400 group-hover:text-white" />
+            <span>Matikan</span>
+          </button>
+
+          {/* Instant Ping Check */}
+          <button
+            id={`btn-ping-${device.id}`}
+            onClick={() => onPing(device)}
+            disabled={isPinging}
+            className={`p-2.5 rounded-xl border border-slate-800 bg-[#09090b] hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-all active:scale-95 ${
+              isPinging ? "border-sky-500/50 bg-sky-500/10 text-sky-400" : ""
+            }`}
+            title="Cek respon Ping sekarang"
+          >
+            <Activity className={`w-4 h-4 ${isPinging ? "animate-spin text-sky-400" : ""}`} />
+          </button>
+        </div>
       </div>
     </div>
   );
 };
+
 
