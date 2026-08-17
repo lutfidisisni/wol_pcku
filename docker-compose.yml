@@ -5,26 +5,17 @@ services:
     build: .
     container_name: wake-on-lan-dashboard
     restart: unless-stopped
-    # Port Host yang direkomendasikan agar TIDAK bentrok dengan port yang sedang aktif di Portainer:
-    # Port aktif di Portainer Anda: 8085-8092, 8095, 8000, 9443, 3308-3311, 3385
-    # Port aman & berurutan yang digunakan: 8096:3000 (atau 8093:3000 / 8094:3000)
-    ports:
-      - "8096:3000"
+    # network_mode: host memungkinkan Magic Packet UDP broadcast langsung ke interface jaringan fisik host.
+    # Ini diperlukan agar WoL berfungsi dari dalam Docker container.
+    # CATATAN: network_mode: host hanya didukung di Linux (tidak berlaku di Docker Desktop Windows/macOS).
+    network_mode: host
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      # Saat network_mode: host, port langsung menggunakan port host (tidak ada port mapping).
+      - PORT=8096
       # Atur ke 'false' jika ingin deploy dalam keadaan BERSIH / KOSONG (tanpa data dummy/contoh).
       # Atur ke 'true' jika ingin memuat contoh perangkat dummy pada instalasi pertama kali.
       - LOAD_SAMPLE_DATA=false
     volumes:
       # Persistent storage agar semua perangkat yang Anda tambahkan tidak hilang saat container di-restart/update
       - ./data:/app/data
-
-    # CATATAN TEKNIS WAKE-ON-LAN DI DOCKER:
-    # Magic Packet Wake-on-LAN menggunakan UDP Broadcast ke subnet LAN lokal (contoh: 192.168.x.255 / 255.255.255.255).
-    # Jika container berada dalam mode default bridge dan paket UDP broadcast tidak tembus ke interface fisik host,
-    # Anda dapat mengaktifkan opsi 'network_mode: host' di bawah ini:
-    #
-    # network_mode: host
-    # environment:
-    #   - PORT=8096
