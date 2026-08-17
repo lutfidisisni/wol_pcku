@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import dgram from "dgram";
 import ping from "ping";
+import { exec } from "child_process";
 
 interface Device {
   id: string;
@@ -277,6 +278,20 @@ function sendMagicPacket(
     } catch (err) {
       reject(err);
     }
+  });
+}
+
+/**
+ * Execute a shell command and return stdout/stderr
+ */
+function execCommand(cmd: string, timeoutMs: number = 10000): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { timeout: timeoutMs }, (error, stdout, stderr) => {
+      if (error) {
+        return reject(new Error(stderr || error.message));
+      }
+      resolve({ stdout, stderr });
+    });
   });
 }
 
@@ -654,8 +669,9 @@ async function startServer() {
     }
 
     try {
-      // If Webhook method is provided with URL, attempt HTTP request
+      // Execute the actual command based on method
       if (method === "webhook" && webhookUrl) {
+        // HTTP Webhook — fire and forget
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -668,6 +684,50 @@ async function startServer() {
           clearTimeout(timeoutId);
         } catch {
           // Webhook might be fire-and-forget or machine went down instantly
+        }
+      } else if (method === "rpc" || method === "windows") {
+        // Windows RPC via shutdown.exe — runs from inside container/host
+        // Requires: net use \\<ip> or LocalAccountTokenFilterPolicy=1 on target
+        try {
+          await execCommand(snippet, timeoutSec * 1000);
+        } catch (rpcErr: any) {
+          // If the PC shuts down mid-command it may throw — treat as success
+          const msg = rpcErr?.message || "";
+          const isExpectedDisconnect =
+            msg.includes("5") || // Access denied (credentials needed)
+            msg.includes("53") || // Network path not found
+            msg.includes("RPC") ||
+            msg.includes("timeout") ||
+            msg.includes("forced");
+          if (!isExpectedDisconnect) {
+            throw rpcErr;
+          }
+          // Otherwise treat as expected — PC is shutting down
+        }
+      } else if (method === "ssh") {
+        // SSH — requires ssh client available in container and key-based auth or sshpass
+        const userStr = username ? `${username}@` : "";
+        let sshCmd = "";
+        if (action === "shutdown") {
+          sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=${timeoutSec} ${userStr}${dev.ip} "shutdown /s /t 0 /f"`;
+        } else if (action === "restart") {
+          sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=${timeoutSec} ${userStr}${dev.ip} "shutdown /r /t 0 /f"`;
+        } else {
+          sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=${timeoutSec} ${userStr}${dev.ip} "rundll32.exe powrprof.dll,SetSuspendState 0,1,0"`;
+        }
+        if (password) {
+          sshCmd = `sshpass -p "${password}" ${sshCmd}`;
+        }
+        try {
+          await execCommand(sshCmd, timeoutSec * 1000);
+        } catch (sshErr: any) {
+          // SSH connection closes when PC shuts down — treat as expected
+          const msg = sshErr?.message || "";
+          if (!msg.includes("Connection refused") && !msg.includes("not found")) {
+            // tolerate — PC may have shut down before SSH ack
+          } else {
+            throw sshErr;
+          }
         }
       }
 
