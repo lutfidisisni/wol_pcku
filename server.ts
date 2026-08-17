@@ -648,12 +648,13 @@ async function startServer() {
 
     // Generate reference command snippet for user
     if (method === "rpc" || method === "windows") {
+      const userArg = username ? `-U "${username}%<password>"` : `-U "Administrator%<password>"`;
       if (action === "shutdown") {
-        snippet = `shutdown /s /m \\\\${dev.ip} /t 0 /f`;
+        snippet = `net rpc shutdown -I ${dev.ip} ${userArg} -f -t 0`;
       } else if (action === "restart") {
-        snippet = `shutdown /r /m \\\\${dev.ip} /t 0 /f`;
+        snippet = `net rpc shutdown -I ${dev.ip} ${userArg} -r -f -t 0`;
       } else {
-        snippet = `rundll32.exe powrprof.dll,SetSuspendState 0,1,0`;
+        snippet = `# Sleep via RPC tidak didukung di Linux; gunakan metode SSH`;
       }
     } else if (method === "ssh") {
       const user = username ? `${username}@` : "";
@@ -686,23 +687,35 @@ async function startServer() {
           // Webhook might be fire-and-forget or machine went down instantly
         }
       } else if (method === "rpc" || method === "windows") {
-        // Windows RPC via shutdown.exe — runs from inside container/host
-        // Requires: net use \\<ip> or LocalAccountTokenFilterPolicy=1 on target
+        // Windows RPC shutdown via Samba 'net rpc' — works from Linux container
+        // Requires: samba-client installed in container, and on target PC:
+        //   - LocalAccountTokenFilterPolicy=1
+        //   - Remote Shutdown firewall rule enabled
+        //   - File and Printer Sharing firewall rule enabled
+        //   - RemoteRegistry service running
+        const userArg = username ? `-U "${username}%${password}"` : `-U "Administrator%"`;
+        let rpcCmd = "";
+        if (action === "shutdown") {
+          rpcCmd = `net rpc shutdown -I ${dev.ip} ${userArg} -f -t 0`;
+        } else if (action === "restart") {
+          rpcCmd = `net rpc shutdown -I ${dev.ip} ${userArg} -r -f -t 0`;
+        } else {
+          // Sleep via RPC is not natively supported; fallback to no-op (user should use SSH for sleep)
+          rpcCmd = `echo "Sleep via RPC not supported on Linux; use SSH method instead"`;
+        }
         try {
-          await execCommand(snippet, timeoutSec * 1000);
+          await execCommand(rpcCmd, timeoutSec * 1000);
         } catch (rpcErr: any) {
-          // If the PC shuts down mid-command it may throw — treat as success
-          const msg = rpcErr?.message || "";
-          const isExpectedDisconnect =
-            msg.includes("5") || // Access denied (credentials needed)
-            msg.includes("53") || // Network path not found
-            msg.includes("RPC") ||
-            msg.includes("timeout") ||
-            msg.includes("forced");
-          if (!isExpectedDisconnect) {
+          const msg = (rpcErr?.message || "").toLowerCase();
+          // Tolerate expected disconnects when PC shuts down mid-command
+          const isExpected =
+            msg.includes("nt_status_connection_disconnected") ||
+            msg.includes("nt_status_pipe_disconnected") ||
+            msg.includes("connection reset") ||
+            msg.includes("timeout");
+          if (!isExpected) {
             throw rpcErr;
           }
-          // Otherwise treat as expected — PC is shutting down
         }
       } else if (method === "ssh") {
         // SSH — requires ssh client available in container and key-based auth or sshpass

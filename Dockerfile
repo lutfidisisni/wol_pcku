@@ -15,6 +15,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Install tools needed for remote power management:
+# - samba-client: provides 'net rpc shutdown' for Windows RPC shutdown
+# - openssh-client: provides 'ssh' for SSH-based shutdown
+# - sshpass: allows SSH with password (non-interactive)
+RUN apk add --no-cache samba-client openssh-client sshpass
+
 COPY package*.json ./
 RUN npm install --omit=dev
 

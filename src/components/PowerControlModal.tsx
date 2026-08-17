@@ -68,12 +68,13 @@ export const PowerControlModal: React.FC<PowerControlModalProps> = ({
   // Generate copyable CLI command according to selected action & method
   let cliCommand = "";
   if (method === "rpc") {
+    const userArg = username ? `-U "${username}%<password>"` : `-U "Administrator%<password>"`;
     if (selectedAction === "shutdown") {
-      cliCommand = `shutdown /s /m \\\\${device.ip} /t 0 /f`;
+      cliCommand = `net rpc shutdown -I ${device.ip} ${userArg} -f -t 0`;
     } else if (selectedAction === "restart") {
-      cliCommand = `shutdown /r /m \\\\${device.ip} /t 0 /f`;
+      cliCommand = `net rpc shutdown -I ${device.ip} ${userArg} -r -f -t 0`;
     } else {
-      cliCommand = `powershell -Command "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend, $false, $false)"`;
+      cliCommand = `# Sleep via RPC tidak didukung dari Linux; gunakan metode SSH`;
     }
   } else if (method === "ssh") {
     const userStr = username ? `${username}@` : "";
@@ -250,7 +251,6 @@ export const PowerControlModal: React.FC<PowerControlModalProps> = ({
                   <div className="text-[10px] text-slate-500">Native Windows LAN</div>
                 </div>
               </button>
-
               <button
                 type="button"
                 onClick={() => setMethod("ssh")}
@@ -284,33 +284,39 @@ export const PowerControlModal: React.FC<PowerControlModalProps> = ({
               </button>
             </div>
 
-            {/* Optional credential fields for SSH or Webhook */}
-            {method === "ssh" && (
+            {/* Optional credential fields for RPC, SSH or Webhook */}
+            {(method === "rpc" || method === "ssh") && (
               <div className="p-3.5 rounded-xl border border-slate-800 bg-slate-950/40 grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                    Username SSH
+                    Username Windows
                   </label>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="root atau user"
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-800 bg-[#09090b] text-xs text-slate-200 font-code"
+                    placeholder="Administrator"
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-800 bg-[#09090b] text-xs text-slate-200 font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] font-medium text-slate-400 mb-1">
-                    Port / Password (Opsional)
+                    Password {method === "rpc" ? "(Wajib untuk RPC)" : "(Opsional SSH)"}
                   </label>
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-800 bg-[#09090b] text-xs text-slate-200 font-code"
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-800 bg-[#09090b] text-xs text-slate-200 font-mono"
                   />
                 </div>
+                {method === "rpc" && (
+                  <div className="col-span-2 text-[10px] text-amber-400 flex items-start gap-1.5">
+                    <span>⚠</span>
+                    <span>Gunakan akun Administrator Windows lokal yang memiliki password. Akun dengan password kosong tidak akan bisa terhubung via RPC.</span>
+                  </div>
+                )}
               </div>
             )}
 
